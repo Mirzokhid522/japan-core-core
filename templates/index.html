@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Japan Core-Core CPI Dashboard (2026)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; 
+            padding: 40px; 
+            background: #191919; /* Notion dark mode background */
+            color: #E0E0E0; 
+        }
+        .container { 
+            max-width: 1100px; 
+            margin: auto; 
+            background: #252525; /* Notion dark card background */
+            padding: 40px; 
+            border-radius: 8px; 
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); 
+        }
+        h1 { 
+            text-align: center; 
+            color: #FFFFFF; 
+            font-size: 26px;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            text-align: center; 
+            color: #9B9A97; 
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        button {
+            background: #2D2D2D;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #E0E0E0;
+            transition: background 0.2s;
+        }
+        button.active {
+            background: #2EAADC;
+            color: white;
+            border-color: #2EAADC;
+        }
+        button:hover {
+            background: #383838;
+        }
+        button.active:hover {
+            background: #258ab0;
+        }
+        .chart-container { 
+            position: relative; 
+            height: 550px; 
+            width: 100%; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Japan Core-Core CPI (2026)</h1>
+        <div class="subtitle">All items, less fresh food and energy — Index Value vs. YoY % Change</div>
+        
+        <div class="controls">
+            <button id="btn-japan" class="active" onclick="switchRegion('japan')">Japan (National)</button>
+            <button id="btn-tokyo" onclick="switchRegion('tokyo')">Tokyo (Ku-bu)</button>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="comboChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let chartInstance = null;
+        let globalData = null;
+
+        // Custom plugin to draw values on top of bars
+        const barLabelsPlugin = {
+            id: 'barLabelsPlugin',
+            afterDatasetsDraw(chart) {
+                const ctx = chart.ctx;
+                chart.data.datasets.forEach((dataset, i) => {
+                    if (dataset.type === 'bar') {
+                        const meta = chart.getDatasetMeta(i);
+                        meta.data.forEach((bar, index) => {
+                            const value = dataset.data[index];
+                            if (value !== null && value !== undefined) {
+                                ctx.save();
+                                ctx.font = 'bold 11px -apple-system, sans-serif';
+                                ctx.fillStyle = '#E0E0E0';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'bottom';
+                                
+                                const x = bar.x;
+                                const y = bar.y - 5; // Position just above the bar
+                                ctx.fillText(value + '%', x, y);
+                                ctx.restore();
+                            }
+                        });
+                    }
+                });
+            }
+        };
+
+        async function loadData() {
+            const response = await fetch('/api/cpi');
+            globalData = await response.json();
+            renderChart('japan');
+        }
+
+        function renderChart(region) {
+            const dataset = globalData[region];
+            const labels = dataset.map(item => item.label);
+            const indexValues = dataset.map(item => item.index);
+            const yoyValues = dataset.map(item => item.yoy);
+
+            const minIndex = Math.min(...indexValues);
+            const yAxisMin = Math.floor(minIndex - 0.5);
+
+            const ctx = document.getElementById('comboChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'YoY % Change (%)',
+                            data: yoyValues,
+                            backgroundColor: 'rgba(54, 162, 235, 0.65)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1',
+                            order: 2
+                        },
+                        {
+                            type: 'line',
+                            label: 'Index Value (2020 = 100)',
+                            data: indexValues,
+                            borderColor: '#F59E0B',
+                            backgroundColor: '#F59E0B',
+                            borderWidth: 3,
+                            tension: 0.15,
+                            yAxisID: 'y',
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            top: 20 // Add padding so labels on top of the highest bar don't get clipped
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { 
+                                font: { family: 'inherit', size: 13 },
+                                color: '#E0E0E0'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9B9A97' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            min: yAxisMin,
+                            title: { display: true, text: 'Index Value', color: '#E0E0E0' },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9B9A97' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'YoY Change (%)', color: '#E0E0E0' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { 
+                                color: '#9B9A97',
+                                callback: function(value) { return value + '%'; } 
+                            }
+                        }
+                    }
+                },
+                plugins: [barLabelsPlugin]
+            });
+        }
+
+        function switchRegion(region) {
+            document.getElementById('btn-japan').classList.toggle('active', region === 'japan');
+            document.getElementById('btn-tokyo').classList.toggle('active', region === 'tokyo');
+            renderChart(region);
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
